@@ -1,34 +1,49 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, render_template, redirect, url_for
 import pandas as pd
+import os
 
 app = Flask(__name__)
-
-# Load Excel once
-df = pd.read_excel("Sample Work File.xlsx")
-df['Month'] = pd.to_datetime(df['Date']).dt.strftime('%B')  # Extract month name
+app.config['UPLOAD_FOLDER'] = 'uploads'
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 @app.route('/')
-def home():
-    return render_template("index.html")
+def index():
+    return '''
+        <h2>Upload Excel File</h2>
+        <form method="POST" action="/analyze" enctype="multipart/form-data">
+            <input type="file" name="excel_file" required>
+            <br><br>
+            <input type="submit" value="Upload & Analyze">
+        </form>
+    '''
 
-@app.route('/ask', methods=['POST'])
-def ask():
-    prompt = request.json.get("prompt", "").lower()
+@app.route('/analyze', methods=['POST'])
+def analyze():
+    file = request.files.get('excel_file')
 
-    months = ['january', 'february', 'march', 'april', 'may', 'june', 'july',
-              'august', 'september', 'october', 'november', 'december']
-    matched_months = [m.capitalize() for m in months if m in prompt]
+    if not file:
+        return "No file uploaded."
 
-    if matched_months:
-        result = df[df['Month'].isin(matched_months)]['Sale Amount'].sum()
-        return jsonify({"answer": f"Total sales in {', '.join(matched_months)}: {result}"})
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+    file.save(filepath)
 
-    for name in df['Sold by'].unique():
-        if name.lower() in prompt:
-            result = df[df['Sold by'].str.lower() == name.lower()]['Sale Amount'].sum()
-            return jsonify({"answer": f"Total sales by {name}: {result}"})
+    try:
+        df = pd.read_excel(filepath)
 
-    return jsonify({"answer": "Couldn't understand your prompt. Try asking about month or name."})
+        # Example Analysis: Show top 5 rows and total sale amount
+        preview = df.head().to_html(index=False)
+        total_sales = df['Sale Amount'].sum()
+
+        return f"""
+            <h2>Analysis Results</h2>
+            <p><strong>Total Sale Amount:</strong> {total_sales}</p>
+            <h3>File Preview:</h3>
+            {preview}
+            <br><a href="/">Upload another file</a>
+        """
+
+    except Exception as e:
+        return f"Error reading Excel file: {e}"
 
 if __name__ == '__main__':
     app.run(debug=True)
